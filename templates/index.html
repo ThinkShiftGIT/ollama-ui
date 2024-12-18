@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        light: {
+                            100: '#ffffff',
+                            200: '#f8f9fa',
+                            300: '#f1f3f5',
+                            400: '#e9ecef',
+                            500: '#dee2e6',
+                            600: '#ced4da',
+                            700: '#adb5bd',
+                            800: '#868e96',
+                            900: '#495057'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="bg-light-200">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <div class="w-64 bg-white border-r border-light-400 flex flex-col">
+            <div class="p-4 border-b border-light-400">
+                <div class="flex items-center space-x-2">
+                    <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="w-8 h-8">
+                    <h1 class="text-xl font-semibold text-light-900">Ollama UI</h1>
+                </div>
+            </div>
+            
+            <!-- New Chat Button -->
+            <div class="p-4">
+                <button id="new-chat" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition-colors duration-200">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                    <span>New Chat</span>
+                </button>
+            </div>
+
+            <!-- History -->
+            <div class="flex-1 overflow-y-auto p-4">
+                <h2 class="text-sm font-semibold text-light-800 mb-2">History</h2>
+                <div id="chat-history" class="space-y-2">
+                    <!-- Chat history items will be added here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col bg-light-100">
+            <!-- Top Bar -->
+            <div class="bg-white border-b border-light-400 p-4 flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <select id="model-select" class="bg-light-200 border border-light-500 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-light-900">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <button id="refresh-models" class="text-light-700 hover:text-light-900 transition-colors duration-200">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chat Area -->
+            <div class="flex-1 overflow-y-auto p-4" id="chat-messages">
+                <!-- Messages will be displayed here -->
+            </div>
+
+            <!-- Input Area -->
+            <div class="border-t border-light-400 p-4 bg-white">
+                <div class="max-w-4xl mx-auto">
+                    <div class="mb-4">
+                        <div id="image-preview" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <label class="flex items-center justify-center p-2 bg-light-300 border border-light-500 rounded-lg cursor-pointer hover:bg-light-400 transition-colors duration-200">
+                                <svg class="w-5 h-5 text-light-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <input type="file" id="image-upload" accept="image/*" multiple class="hidden" />
+                            </label>
+                            <span id="file-count" class="text-sm text-light-800">No files selected</span>
+                        </div>
+                    </div>
+                    <div class="flex items-end space-x-2">
+                        <textarea
+                            id="prompt-input"
+                            class="flex-1 bg-light-200 border border-light-500 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-light-900"
+                            placeholder="Ask anything..."
+                            rows="1"
+                        ></textarea>
+                        <button
+                            id="generate-btn"
+                            class="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg flex-shrink-0 transition-colors duration-200"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load available models
+            async function loadModels() {
+                const modelSelect = document.getElementById('model-select');
+                try {
+                    const response = await fetch('/api/models');
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        modelSelect.innerHTML = `<option value="">Error: ${data.error}</option>`;
+                        console.error('Error loading models:', data.error);
+                        return;
+                    }
+                    
+                    if (!data.models || data.models.length === 0) {
+                        modelSelect.innerHTML = '<option value="">No models available</option>';
+                        return;
+                    }
+                    
+                    modelSelect.innerHTML = data.models
+                        .map(model => `<option value="${model.name}">${model.name}</option>`)
+                        .join('');
+                } catch (error) {
+                    console.error('Error loading models:', error);
+                    modelSelect.innerHTML = '<option value="">Error loading models</option>';
+                }
+            }
+
+            // Load models on page load
+            loadModels();
+
+            // Add refresh functionality
+            document.getElementById('refresh-models').onclick = loadModels;
+
+            const generateBtn = document.getElementById('generate-btn');
+            const promptInput = document.getElementById('prompt-input');
+            const modelSelect = document.getElementById('model-select');
+            const imageUpload = document.getElementById('image-upload');
+            const imagePreview = document.getElementById('image-preview');
+            const fileCount = document.getElementById('file-count');
+
+            let uploadedImages = [];
+
+            // Handle image uploads with loading animation
+            imageUpload.addEventListener('change', async (event) => {
+                const files = event.target.files;
+                fileCount.textContent = `${files.length} file(s) selected`;
+                imagePreview.innerHTML = '';
+                uploadedImages = [];
+
+                for (const file of files) {
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    try {
+                        const response = await fetch('/api/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await response.json();
+                        
+                        if (data.image) {
+                            uploadedImages.push(data.image);
+                            
+                            const preview = document.createElement('div');
+                            preview.className = 'relative group';
+                            preview.innerHTML = `
+                                <img src="data:image/jpeg;base64,${data.image}" 
+                                     class="w-full h-32 object-cover rounded-lg transition-transform duration-200 group-hover:scale-105" />
+                                <button class="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                        onclick="this.parentElement.remove()">×</button>
+                            `;
+                            imagePreview.appendChild(preview);
+                        }
+                    } catch (error) {
+                        console.error('Error uploading image:', error);
+                    }
+                }
+            });
+
+            // Function to handle generation with loading state
+            async function generateResponse() {
+                const model = modelSelect.value;
+                const prompt = promptInput.value;
+
+                if (!model || !prompt) {
+                    alert('Please select a model and enter a prompt');
+                    return;
+                }
+
+                generateBtn.disabled = true;
+                generateBtn.innerHTML = `
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Generating...
+                `;
+
+                try {
+                    const response = await fetch('/api/generate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            model, 
+                            prompt,
+                            images: uploadedImages
+                        }),
+                    });
+                    const data = await response.json();
+                    addMessageToChat('assistant', data.response);
+                } catch (error) {
+                    console.error('Error:', error);
+                } finally {
+                    generateBtn.disabled = false;
+                    generateBtn.textContent = '';
+                    generateBtn.innerHTML = `
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                        </svg>
+                    `;
+                }
+            }
+
+            // Add click event listener
+            generateBtn.addEventListener('click', async () => {
+                const prompt = promptInput.value;
+                if (!prompt.trim()) return;
+
+                addMessageToChat('user', prompt);
+                addToHistory(prompt);
+                
+                await generateResponse();
+            });
+
+            // Add keyboard event listener for Enter key
+            promptInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault(); // Prevent default newline
+                    generateBtn.click();
+                }
+            });
+
+            function addMessageToChat(role, content) {
+                const messagesDiv = document.getElementById('chat-messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `mb-4 ${role === 'user' ? 'text-right' : ''}`;
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = `inline-block max-w-3xl ${role === 'user' ? 
+                    'bg-blue-600 text-white' : 'bg-light-200 text-light-900'} rounded-lg px-4 py-2`;
+                contentDiv.textContent = content;
+                
+                messageDiv.appendChild(contentDiv);
+                messagesDiv.appendChild(messageDiv);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+
+            function addToHistory(prompt) {
+                const historyDiv = document.getElementById('chat-history');
+                const historyItem = document.createElement('div');
+                historyItem.className = 'p-2 hover:bg-light-300 rounded-lg cursor-pointer transition-colors duration-200';
+                historyItem.textContent = prompt.substring(0, 30) + (prompt.length > 30 ? '...' : '');
+                historyDiv.insertBefore(historyItem, historyDiv.firstChild);
+            }
+
+            // Auto-resize textarea
+            const textarea = document.getElementById('prompt-input');
+            textarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+            });
+        });
+    </script>
+</body>
+</html>
